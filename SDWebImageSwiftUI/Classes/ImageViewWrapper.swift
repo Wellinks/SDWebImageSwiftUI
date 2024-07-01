@@ -8,17 +8,23 @@
 
 import Foundation
 import SDWebImage
+import SwiftUI
 
 #if !os(watchOS)
 
 /// Use wrapper to solve tne `UIImageView`/`NSImageView` frame size become image size issue (SwiftUI's Bug)
-@available(iOS 14.0, OSX 11.0, tvOS 14.0, watchOS 7.0, *)
+@available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
 public class AnimatedImageViewWrapper : PlatformView {
     /// The wrapped actual image view, using SDWebImage's aniamted image view
-    public var wrapped = SDAnimatedImageView()
+    @objc dynamic public var wrapped = SDAnimatedImageView()
+    var observation: NSKeyValueObservation?
     var interpolationQuality = CGInterpolationQuality.default
     var shouldAntialias = false
-    var resizable = false
+    var resizingMode: Image.ResizingMode?
+    
+    deinit {
+        observation?.invalidate()
+    }
     
     public override func draw(_ rect: CGRect) {
         #if os(macOS)
@@ -48,26 +54,40 @@ public class AnimatedImageViewWrapper : PlatformView {
     
     public override var intrinsicContentSize: CGSize {
         /// Match the behavior of SwiftUI.Image, only when image is resizable, use the super implementation to calculate size
-        if resizable {
-            return super.intrinsicContentSize
+        let contentSize = wrapped.intrinsicContentSize
+        if let _ = resizingMode {
+            /// Keep aspect ratio
+            if contentSize.width > 0 && contentSize.height > 0 {
+                let ratio = contentSize.width / contentSize.height
+                let size = CGSize(width: ratio, height: 1)
+                return size
+            } else {
+                return contentSize
+            }
         } else {
             /// Not resizable, always use image size, like SwiftUI.Image
-            return wrapped.intrinsicContentSize
+            return contentSize
         }
     }
     
     public override init(frame frameRect: CGRect) {
         super.init(frame: frameRect)
         addSubview(wrapped)
+        observation = observe(\.wrapped.image, options: [.new]) { _, _ in
+            self.invalidateIntrinsicContentSize()
+        }
     }
     
     public required init?(coder: NSCoder) {
         super.init(coder: coder)
         addSubview(wrapped)
+        observation = observe(\.wrapped.image, options: [.new]) { _, _ in
+            self.invalidateIntrinsicContentSize()
+        }
     }
 }
 
-@available(iOS 14.0, OSX 11.0, tvOS 14.0, watchOS 7.0, *)
+@available(iOS 14.0, macOS 11.0, tvOS 14.0, watchOS 7.0, *)
 extension PlatformView {
     /// Adds constraints to this `UIView` instances `superview` object to make sure this always has the same size as the superview.
     /// Please note that this has no effect if its `superview` is `nil` – add this `UIView` instance as a subview before calling this.
